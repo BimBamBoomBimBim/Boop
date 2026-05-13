@@ -1,0 +1,9 @@
+{
+  "name": "thecoolparty",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build/encrypt.mjs",
+    "key": "node build/encrypt.mjs --print-url"
+  }
+}
