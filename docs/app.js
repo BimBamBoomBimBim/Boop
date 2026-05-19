@@ -187,7 +187,6 @@
   } else {
     root.innerHTML = `
       <div class="timer">
-        <p class="postponed">Postponed to Saturday 23</p>
         <div class="time"><span>--</span><i>:</i><span>--</span><i>:</i><span>--</span><i>:</i><span>--</span></div>
         <div class="rabbit rabbit-looking"></div>
         <p class="hint">Tap the screen to enable sound</p>
