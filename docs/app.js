@@ -78,57 +78,36 @@
     })
   );
 
-  // ---- Audio : Web Audio API (plus fiable que HTMLAudioElement sur iOS) ----
-  // audioCtx.resume() dans le gesture handler unlock l'audio pour toute la
-  // page ; ensuite on peut lancer la lecture quand on veut. Si l'user tape
-  // avant que le buffer soit décodé, on stocke l'intention et on lance dès
-  // que le buffer est prêt — pas besoin d'un nouveau gesture.
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  const audioCtx = AudioCtx ? new AudioCtx() : null;
-  let audioBuffer = null;
-  let audioSource = null;
+  // ---- Audio : HTMLAudioElement avec SILENT_WAV initial + swap de src ----
+  // Web Audio API ne marchait pas sur le tel de l'user. On revient à
+  // HTMLAudio : l'élément a une src valide (SILENT_WAV) dès le départ donc
+  // play() au gesture réussit toujours et unlock iOS. audioPromise.then
+  // remplace la src par la vraie musique pendant que ça joue → seamless.
+  const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  const audioEl = new Audio();
+  audioEl.loop = true;
+  audioEl.preload = 'auto';
+  audioEl.src = SILENT_WAV;
   let audioStarted = false;
 
-  if (audioCtx && hasAudio) {
-    audioPromise.then(async (url) => {
-      if (!url) return;
-      try {
-        const res = await fetch(url);
-        const ab = await res.arrayBuffer();
-        audioBuffer = await audioCtx.decodeAudioData(ab);
-        if (audioStarted && !audioSource) playBuffer();
-      } catch {}
-    });
-  }
-
-  function playBuffer() {
-    if (!audioBuffer || audioSource || !audioCtx) return;
-    audioSource = audioCtx.createBufferSource();
-    audioSource.buffer = audioBuffer;
-    audioSource.loop = true;
-    audioSource.connect(audioCtx.destination);
-    audioSource.start();
-  }
+  audioPromise.then((url) => {
+    if (!url) return;
+    const wasPlaying = !audioEl.paused;
+    audioEl.pause();
+    audioEl.src = url;
+    audioEl.load();
+    if (wasPlaying) {
+      audioEl.play().catch(() => {});
+    }
+  });
 
   function tryStartMusic() {
     if (audioStarted) return;
     audioStarted = true;
-    if (!audioCtx) return;
-    // Priming silencieux (1 sample) — jouer quelque chose immédiatement
-    // dans le gesture handler aide iOS Safari à "réveiller" le ctx audio.
-    try {
-      const primer = audioCtx.createBuffer(1, 1, 22050);
-      const ps = audioCtx.createBufferSource();
-      ps.buffer = primer;
-      ps.connect(audioCtx.destination);
-      ps.start(0);
-    } catch {}
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    if (audioBuffer) playBuffer();
-    // Si pas de buffer encore : audioPromise.then lancera playBuffer
-    // dès que le décodage est fini (ctx déjà unlocked).
+    audioEl.volume = 1;
+    const p = audioEl.play();
+    if (!p) { audioStarted = false; return; }
+    p.catch(() => { audioStarted = false; });
   }
 
   // ---- Tap rate → accélère les lapins ----
