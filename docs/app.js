@@ -199,7 +199,7 @@
           <div class="modal-inner">
             <button class="modal-close" type="button" aria-label="Close">×</button>
             <ul class="rules">
-              <li>This is a free entrance, take care of each other !</li>
+              <li>This is a free entrance, take care of each other</li>
               <li>No violence, racism, discrimination</li>
               <li>Respect and take care of the decorations and equipment</li>
               <li>Ask for consent</li>
