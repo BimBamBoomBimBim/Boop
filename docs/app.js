@@ -78,30 +78,47 @@
     })
   );
 
-  // ---- Audio : démarre directement au premier tap (pas de prime silent) ----
-  const audioEl = new Audio();
-  audioEl.loop = true;
-  audioEl.preload = 'auto';
+  // ---- Audio : Web Audio API (plus fiable que HTMLAudioElement sur iOS) ----
+  // audioCtx.resume() dans le gesture handler unlock l'audio pour toute la
+  // page ; ensuite on peut lancer la lecture quand on veut. Si l'user tape
+  // avant que le buffer soit décodé, on stocke l'intention et on lance dès
+  // que le buffer est prêt — pas besoin d'un nouveau gesture.
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = AudioCtx ? new AudioCtx() : null;
+  let audioBuffer = null;
+  let audioSource = null;
   let audioStarted = false;
 
-  audioPromise.then((url) => {
-    if (!url) return;
-    audioEl.src = url;
-    audioEl.load();
-  });
+  if (audioCtx && hasAudio) {
+    audioPromise.then(async (url) => {
+      if (!url) return;
+      try {
+        const res = await fetch(url);
+        const ab = await res.arrayBuffer();
+        audioBuffer = await audioCtx.decodeAudioData(ab);
+        if (audioStarted && !audioSource) playBuffer();
+      } catch {}
+    });
+  }
+
+  function playBuffer() {
+    if (!audioBuffer || audioSource || !audioCtx) return;
+    audioSource = audioCtx.createBufferSource();
+    audioSource.buffer = audioBuffer;
+    audioSource.loop = true;
+    audioSource.connect(audioCtx.destination);
+    audioSource.start();
+  }
 
   function tryStartMusic() {
     if (audioStarted) return;
     audioStarted = true;
-    if (audioEl.readyState >= 1) {
-      try { audioEl.currentTime = 0; } catch {}
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
     }
-    // Pas de fade-in : démarrer à volume 0 puis incrémenter ajoutait un
-    // délai perceptible avant que le son soit audible. Volume plein direct.
-    audioEl.volume = 1;
-    const p = audioEl.play();
-    if (!p) { audioStarted = false; return; }
-    p.catch(() => { audioStarted = false; });
+    if (audioBuffer) playBuffer();
+    // Si pas de buffer encore : audioPromise.then lancera playBuffer
+    // dès que le décodage est fini (ctx déjà unlocked).
   }
 
   // ---- Tap rate → accélère les lapins ----
@@ -193,7 +210,7 @@
           <div class="modal-inner">
             <button class="modal-close" type="button" aria-label="Close">×</button>
             <ul class="rules">
-              <li>This is a free entrance, enjoy our party!</li>
+              <li>This is a free entrance, take care of each other !</li>
               <li>No violence, racism, discrimination</li>
               <li>Respect and take care of the decorations and equipment</li>
               <li>Ask for consent</li>
