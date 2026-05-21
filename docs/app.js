@@ -113,7 +113,17 @@
   function tryStartMusic() {
     if (audioStarted) return;
     audioStarted = true;
-    if (audioCtx && audioCtx.state === 'suspended') {
+    if (!audioCtx) return;
+    // Priming silencieux (1 sample) — jouer quelque chose immédiatement
+    // dans le gesture handler aide iOS Safari à "réveiller" le ctx audio.
+    try {
+      const primer = audioCtx.createBuffer(1, 1, 22050);
+      const ps = audioCtx.createBufferSource();
+      ps.buffer = primer;
+      ps.connect(audioCtx.destination);
+      ps.start(0);
+    } catch {}
+    if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
     if (audioBuffer) playBuffer();
@@ -122,22 +132,22 @@
   }
 
   // ---- Tap rate → accélère les lapins ----
-  // Plus l'user tape vite, plus --rabbit-duration descend (jusqu'à 800ms).
-  // Quand 1500ms sans tap, retour à 2400ms.
+  // Base 3000ms (60 BPM). Tape rapide → descend jusqu'à 800ms.
+  // 1500ms sans tap → retour à 3000ms.
   let tapTimes = [];
   document.addEventListener('pointerdown', () => {
     const now = Date.now();
     tapTimes.push(now);
     tapTimes = tapTimes.filter((t) => now - t < 1500);
     const count = tapTimes.length;
-    const duration = Math.max(800, 2400 - (count - 1) * 400);
+    const duration = Math.max(800, 3000 - (count - 1) * 450);
     document.documentElement.style.setProperty('--rabbit-duration', duration + 'ms');
   });
   setInterval(() => {
     const now = Date.now();
     tapTimes = tapTimes.filter((t) => now - t < 1500);
     if (tapTimes.length === 0) {
-      document.documentElement.style.setProperty('--rabbit-duration', '2400ms');
+      document.documentElement.style.setProperty('--rabbit-duration', '3000ms');
     }
   }, 500);
 
