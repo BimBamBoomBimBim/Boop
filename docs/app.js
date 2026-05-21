@@ -96,17 +96,12 @@
     if (audioEl.readyState >= 1) {
       try { audioEl.currentTime = 0; } catch {}
     }
-    audioEl.volume = 0;
+    // Pas de fade-in : démarrer à volume 0 puis incrémenter ajoutait un
+    // délai perceptible avant que le son soit audible. Volume plein direct.
+    audioEl.volume = 1;
     const p = audioEl.play();
     if (!p) { audioStarted = false; return; }
-    p.then(() => {
-      const fade = setInterval(() => {
-        if (audioEl.volume < 1) audioEl.volume = Math.min(1, audioEl.volume + 0.05);
-        else clearInterval(fade);
-      }, 50);
-    }).catch(() => {
-      audioStarted = false;
-    });
+    p.catch(() => { audioStarted = false; });
   }
 
   // ---- Tap rate → accélère les lapins ----
@@ -212,6 +207,11 @@
     `;
     const timerEl = root.querySelector('.timer');
     const hint = timerEl.querySelector('.hint');
+    const timerTitle = timerEl.querySelector('.title');
+
+    // Le titre reste invisible (CSS opacity 0) jusqu'à ce que Danken soit
+    // chargée → évite le flash en system-ui le temps du déchiffrement font.
+    Promise.all(fontPromises).then(() => timerTitle?.classList.add('ready'));
 
     wireModal(timerEl);
 
