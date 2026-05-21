@@ -45,7 +45,6 @@
   document.head.appendChild(style);
   document.title = ' ';
 
-  // ---- Décryption d'un binaire (IV|ciphertext|tag) → Blob URL ----
   async function decryptBin(path, mime) {
     try {
       const res = await fetch(path, { cache: 'no-store' });
@@ -64,17 +63,12 @@
 
   const audioPromise = hasAudio ? decryptBin('audio.enc.bin', 'audio/mpeg') : Promise.resolve(null);
 
-  // Toutes les images sont déchiffrées en parallèle et exposées comme variables
-  // CSS --<name>-img. Disponibles dès que prêtes, le CSS s'auto-remplit.
   for (const { name, mime } of images) {
     decryptBin(`${name}.enc.bin`, mime).then((url) => {
       if (url) document.documentElement.style.setProperty(`--${name}-img`, `url("${url}")`);
     });
   }
 
-  // Fonts : déchiffrement + enregistrement via FontFace API, en parallèle.
-  // On collecte les promesses pour attendre le chargement avant le reveal,
-  // sinon FOUT visible quand on swap vers .page (qui utilise la font).
   const fontPromises = fonts.map(({ name, family, mime }) =>
     decryptBin(`${name}.enc.bin`, mime).then(async (url) => {
       if (!url) return;
@@ -84,71 +78,70 @@
     })
   );
 
-  // ---- Audio : un seul élément, primé lors du tap pour autoplay iOS ----
-  // Si l'audio réel est déjà chargé au moment du tap → on prime directement
-  // avec la vraie source (le plus fiable). Sinon → silence le temps que
-  // l'audio finisse de se déchiffrer, puis on swap la src.
-  const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  // ---- Audio : démarre directement au premier tap (pas de prime silent) ----
   const audioEl = new Audio();
   audioEl.loop = true;
   audioEl.preload = 'auto';
-  let audioPrimed = false;
-  let realSrcReady = false;
+  let audioStarted = false;
 
   audioPromise.then((url) => {
     if (!url) return;
     audioEl.src = url;
-    realSrcReady = true;
     audioEl.load();
   });
 
-  function primeAudio() {
-    if (audioPrimed) return;
-    audioPrimed = true;
-    // Si l'audio n'est pas encore prêt → silence ; sinon on prime
-    // directement avec la vraie src (le plus fiable).
-    if (!realSrcReady) {
-      audioEl.src = SILENT_WAV;
-    }
-    // On utilise volume = 0 plutôt que muted (iOS Safari a des bugs
-    // connus avec muted qui peut rester "collé" après un toggle).
-    audioEl.volume = 0;
-    audioEl.play().then(() => {
-      audioEl.pause();
-    }).catch(() => {});
-  }
-
-  function fadeInVolume() {
-    const fade = setInterval(() => {
-      if (audioEl.volume < 1) audioEl.volume = Math.min(1, audioEl.volume + 0.05);
-      else clearInterval(fade);
-    }, 50);
-  }
-
-  function tryPlayFromStart() {
-    // currentTime = 0 ok seulement si les metadata sont chargées,
-    // sinon ça throw sur iOS.
+  function tryStartMusic() {
+    if (audioStarted) return;
+    audioStarted = true;
     if (audioEl.readyState >= 1) {
       try { audioEl.currentTime = 0; } catch {}
     }
     audioEl.volume = 0;
-    return audioEl.play();
+    const p = audioEl.play();
+    if (!p) { audioStarted = false; return; }
+    p.then(() => {
+      const fade = setInterval(() => {
+        if (audioEl.volume < 1) audioEl.volume = Math.min(1, audioEl.volume + 0.05);
+        else clearInterval(fade);
+      }, 50);
+    }).catch(() => {
+      audioStarted = false;
+    });
   }
 
-  function startMusic() {
-    tryPlayFromStart().then(fadeInVolume).catch(() => {
-      // Autoplay refusé (typiquement : arrivée après le reveal sans avoir
-      // tapé pendant un countdown). On attend la 1ère interaction de l'user
-      // n'importe où sur la page et on lance à ce moment-là.
-      const onAnyTap = () => {
-        tryPlayFromStart().then(fadeInVolume).catch(() => {});
-      };
-      document.addEventListener('pointerdown', onAnyTap, { once: true });
+  // ---- Tap rate → accélère les lapins ----
+  // Plus l'user tape vite, plus --rabbit-duration descend (jusqu'à 800ms).
+  // Quand 1500ms sans tap, retour à 2400ms.
+  let tapTimes = [];
+  document.addEventListener('pointerdown', () => {
+    const now = Date.now();
+    tapTimes.push(now);
+    tapTimes = tapTimes.filter((t) => now - t < 1500);
+    const count = tapTimes.length;
+    const duration = Math.max(800, 2400 - (count - 1) * 400);
+    document.documentElement.style.setProperty('--rabbit-duration', duration + 'ms');
+  });
+  setInterval(() => {
+    const now = Date.now();
+    tapTimes = tapTimes.filter((t) => now - t < 1500);
+    if (tapTimes.length === 0) {
+      document.documentElement.style.setProperty('--rabbit-duration', '2400ms');
+    }
+  }, 500);
+
+  function wireModal(scope) {
+    const infoBtn = scope.querySelector('.info-btn');
+    const modal = scope.querySelector('.modal');
+    if (!infoBtn || !modal) return;
+    const modalClose = modal.querySelector('.modal-close');
+    infoBtn.addEventListener('click', () => { modal.hidden = false; });
+    modalClose?.addEventListener('click', () => { modal.hidden = true; });
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.hidden = true;
     });
   }
 
   async function doReveal(withFade) {
-    // Attend les fonts pour éviter un FOUT (la page utilise Danken)
     await Promise.all(fontPromises);
 
     if (withFade) {
@@ -159,8 +152,15 @@
     root.innerHTML = html;
     root.style.opacity = '1';
 
-    await audioPromise;
-    if (hasAudio) startMusic();
+    // Arrivée tardive (post-reveal sans avoir tapé pendant le countdown) :
+    // 1er tap n'importe où sur le document lance la musique.
+    if (hasAudio && !audioStarted) {
+      const fallback = () => {
+        tryStartMusic();
+        if (audioStarted) document.removeEventListener('pointerdown', fallback);
+      };
+      document.addEventListener('pointerdown', fallback);
+    }
   }
 
   function pad(n) { return String(n).padStart(2, '0'); }
@@ -187,23 +187,46 @@
   } else {
     root.innerHTML = `
       <div class="timer">
+        <h1 class="title">Welcome to BunnyMania</h1>
         <div class="time"><span>--</span><i>:</i><span>--</span><i>:</i><span>--</span><i>:</i><span>--</span></div>
         <div class="rabbit rabbit-looking"></div>
         <p class="hint">Tap the screen to enable sound</p>
+        <button class="info-btn" type="button">Informations</button>
         <div class="rabbit rabbit-seating"></div>
         <div class="rabbit rabbit-running"></div>
+        <div class="modal" hidden>
+          <div class="modal-inner">
+            <button class="modal-close" type="button" aria-label="Close">×</button>
+            <ul class="rules">
+              <li>This is a free entrance, enjoy our party!</li>
+              <li>No violence, racism, discrimination</li>
+              <li>Respect and take care of the decorations and equipment</li>
+              <li>Ask for consent</li>
+              <li>Consume safely</li>
+              <li>Throw trash in designated bins, cigarette butt included, bring ash trays</li>
+              <li>In case of emergency, look for team members with a red light</li>
+            </ul>
+          </div>
+        </div>
       </div>
     `;
-    const hint = root.querySelector('.timer .hint');
-    root.querySelector('.timer').addEventListener('pointerdown', () => {
-      primeAudio();
+    const timerEl = root.querySelector('.timer');
+    const hint = timerEl.querySelector('.hint');
+
+    wireModal(timerEl);
+
+    const handleFirstTap = (e) => {
+      if (e.target.closest('.info-btn') || e.target.closest('.modal')) return;
+      tryStartMusic();
       hint.style.opacity = '0';
       setTimeout(() => {
         hint.textContent = "you're on";
         hint.classList.add('on');
         hint.style.opacity = '';
       }, 200);
-    }, { once: true });
+      timerEl.removeEventListener('pointerdown', handleFirstTap);
+    };
+    timerEl.addEventListener('pointerdown', handleFirstTap);
     tick();
   }
 })();
