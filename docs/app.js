@@ -194,6 +194,7 @@
         <div class="rabbit rabbit-looking"></div>
         <p class="hint">Tap the screen to enable sound</p>
         <button class="info-btn" type="button">Informations</button>
+        <p class="foodinfo">Bar + Pizza<br>Open grill for whatever you like to be grilled!</p>
         <div class="rabbit rabbit-seating"></div>
         <div class="rabbit rabbit-running"></div>
         <div class="modal" hidden>
