@@ -189,6 +189,7 @@
     root.innerHTML = `
       <div class="timer">
         <h1 class="title">Welcome to BunnyMania</h1>
+        <p class="subtitle">Party location will be announced here at the end of the timer</p>
         <div class="time"><span>--</span><i>:</i><span>--</span><i>:</i><span>--</span><i>:</i><span>--</span></div>
         <div class="rabbit rabbit-looking"></div>
         <p class="hint">Tap the screen to enable sound</p>
